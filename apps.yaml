@@ -1,0 +1,18 @@
+---
+garage_lights:
+  module: garagelights
+  class: GarageLights
+
+pico_remotes:
+  module: pico
+  class: PicoRemote
+  91567021: media_player.bluesound_ensuite
+  91952379: media_player.bluesound_kitchen
+
+bosch_kitchen:
+  module: boschkitchen
+  class: BoschKitchen
+
+speakers:
+  module: speakers
+  class: Speakers
