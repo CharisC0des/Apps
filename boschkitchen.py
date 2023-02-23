@@ -1,73 +1,61 @@
 import appdaemon.plugins.hass.hassapi as hass
-from appdaemon.exceptions import TimeOutException
-import asyncio
-#register_service
-#get_app()
-#both ways to call app from another in app daemon
 class BoschKitchen(hass.Hass):
 
-  appliances={}
-  
+  appliances = {}
+  recall_announcement = {}
+  timer_announcement_handle = {}
+
   def initialize(self):
-    BoschKitchen.appliances = {
+    self.appliances = {
       "oven door": self.get_entity("binary_sensor.bosch_hbl8753uc_68a40e35e446_bsh_common_status_doorstate"),
       "cooktop mode": self.get_entity("sensor.bosch_nitp669suc_68a40e49f847_bsh_common_status_operationstate"),
-      "oven timer": self.get_entity("number.bosch_hbl8753uc_68a40e35e446_bsh_common_setting_alarmclock"),
+      "oven timer": self.get_entity("sensor.bosch_hbl8753uc_68a40e35e446_bsh_common_setting_alarmclock"),
       "cooktop timer": self.get_entity("number.bosch_nitp669suc_68a40e49f847_bsh_common_setting_alarmclock")
     }
-    # self.log(BoschKitchen.appliances)
-    # for s in BoschKitchen.appliances.values():
-    #   self.log(s.entity_id + ": " + s.state)
-    self.listen_state(self.timer_elapsed, BoschKitchen.appliances["oven timer"].entity_id, new="0")
-    self.listen_state(self.timer_elapsed, BoschKitchen.appliances["cooktop timer"].entity_id, new="0")
+    self.listen_state(self.timer_elapsed, self.appliances["oven timer"].entity_id, new="0")
+    self.listen_state(self.timer_elapsed, self.appliances["cooktop timer"].entity_id, new="0")
     self.log("initialization complete, Bosch Kitchen.")
   
-  
-  async def check_oven_door(self, entity, attribute, old, new, kwargs):    
-    kwargs["recall"]+=1
-    door_sensor = BoschKitchen.appliances["oven door"]
-    try:
-      await door_sensor.wait_state("on", timeout = 60)
-      self.log("item removed")
-    except TimeOutException:
-      self.log("oven timer elapsed and item not removed, call announcement again")
-      pass # didn't complete on time
 
-  async def check_cooktop(self, entity, attribute, old, new, kwargs):   
-    kwargs["recall"]+=1
-    cooktop_powered = BoschKitchen.appliances["cooktop mode"]
-    try:
-      await cooktop_powered.wait_state("BSH.Common.EnumType.OperationState.Inactive", timeout = 60)
-      self.log("cooktop turned off")
-    except TimeOutException:
-      self.log("cooktop timer elapsed and not turned off, call announcement again")
-      pass # didn't complete on time
+  def announce_timer_elapsed(self, kwargs):
+    caller=kwargs["caller"]
+    self.log(caller)
+    blnContinue = True
+    if caller == "Bosch cooktop":
+      self.log (self.appliances["cooktop mode"].state)
+      if self.appliances["cooktop mode"].state == "BSH.Common.EnumType.OperationState.Inactive" and self.recall_announcement[caller] > 0:
+        blnContinue = False
+        self.log("cooktop powered off, cancel timer reminders")
+        self.cancel_timer(self.timer_announcement_handle[caller])
+        self.recall_announcement[caller] = 0
+    if blnContinue:
+      msg = [f"{caller} timer elapsed"]
+      if self.recall_announcement[caller] > 0:
+        msg.extend([f" for {self.recall_announcement[caller]} minute"])
+        if  self.recall_announcement[caller] > 1:
+          msg.extend(["s"])
+      self.log(msg)
+      self.call_service("var/set", entity_id="var.tts_message", attributes={"message": "".join(msg)})
+      self.call_service("script/overhead_announcement")
+      self.log("announcement in progress")
+      self.recall_announcement[caller] += 1
 
-  def timer_elapsed (self, entity, attribute, old, new, kwargs):    
-    if 10 > int(old) > 0:
+  def oven_door_opened(self, entity, attribute, old, new, kwargs):
+    caller = "Bosch oven"
+    self.log("oven door opened, cancel timer reminders")
+    self.cancel_listen_state(self.oven_door)
+    self.cancel_timer(self.timer_announcement_handle[caller])
+    self.recall_announcement[caller] = 0
+
+  def timer_elapsed (self, entity, attribute, old, new, kwargs):
+    self.log(f"{entity} timer elapsed")    
+    if 70 > int(old) > 0:
       call_entity = self.get_entity(entity)
-      self.log("timer value: "+call_entity.state)
-      if call_entity.state=="0":
-        #device_ID = entity.replace("number.", "").replace("_bsh_common_setting_alarmclock", "")
-        if entity==BoschKitchen.appliances["oven timer"].entity_id:
-          caller="Bosch oven"
-        elif entity==BoschKitchen.appliances["cooktop timer"].entity_id:
-          caller="Bosch cooktop"
-        msg = [caller, " timer elapsed"]
-        try:
-          if kwargs["recall"] == 1:
-            msg.extend([" for ", kwargs["recall"], " minute"])
-          elif  kwargs["recall"] > 1:
-            msg.extend([" for ", kwargs["recall"], " minutes"])
-        except:
-          kwargs = {"recall": 0}
-          self.log("first timer reminder")
-          pass
-        self.log(msg)
-        self.call_service("var/set", entity_id="var.tts_message", attributes={"message": "".join(msg)})
-        self.call_service("script/overhead_announcement")
-        self.log("announcement in progress")
-        if caller == "Bosch oven":
-          self.create_task(BoschKitchen.check_oven_door(self, entity, attribute, old, new, kwargs),timer_elapsed (self, entity, attribute, old, new, kwargs))
-        elif caller == "Bosch cooktop":
-          self.create_task(BoschKitchen.check_cooktop(self, entity, attribute, old, new, kwargs),timer_elapsed (self, entity, attribute, old, new, kwargs))
+      self.log("timer value: " + call_entity.state)
+      if entity==self.appliances["oven timer"].entity_id:
+        caller="Bosch oven"
+        self.oven_door = self.listen_state(self.oven_door_opened, self.appliances["oven door"].entity_id, new="on")
+      elif entity==self.appliances["cooktop timer"].entity_id:
+        caller="Bosch cooktop" 
+      self.recall_announcement[caller] = 0
+      self.timer_announcement_handle[caller] = self.run_every(self.announce_timer_elapsed, "now", 60, caller=caller)
