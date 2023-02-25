@@ -9,15 +9,15 @@ pico_audio_remotes:
   91567021: media_player.bluesound_ensuite
   91952379: media_player.bluesound_kitchen
   actions:
-    - "on": media_play_pause
-    - "off":
+    "on": media_play_pause
+    "off":
         - media_next_track
         - media_previous_track
-    - stop:
+    stop:
         - shuffle_set
         - select_source
-    - raise: volume_set
-    - lower: volume_set
+    raise: volume_set
+    lower: volume_set
   sensitivity: "vol_change"
   service_call: "speakers/control"
 
