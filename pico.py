@@ -10,7 +10,6 @@ class PicoRemote(hass.Hass):
   def initialize(self):
     global start_press
     global stop_press
-    global previous_press
     start_press = time.time()
     stop_press = time.time()
     self.remote_functions = self.args
