@@ -26,7 +26,7 @@ class PicoRemote(hass.Hass):
       stop_press = time.time()
       duration = stop_press - start_press
       default_entity = self.remote_functions[data["serial"]]
-      actions = dict((key,d[key]) for d in self.remote_functions["actions"] for key in d)
+      actions = self.remote_functions["actions"]
       button_name = data['button_type']
       action = actions[button_name]
       if duration > 0.4:
