@@ -3,7 +3,7 @@ garage_lights:
   module: garagelights
   class: GarageLights
 
-pico_remotes:
+pico_audio_remotes:
   module: pico
   class: PicoRemote
   91567021: media_player.bluesound_ensuite
