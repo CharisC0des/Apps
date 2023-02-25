@@ -4,24 +4,8 @@ import time
 #
 # Integration for pico remotes
 #
-"""
-Ensuite Play/Pause button press event:
-data:
-  serial: 91567021 --ensuite pico remote
-  serial: 91952379 --bluesound pico remote
-  button_type: "on" --play/pause Audio button
-  button_type: "off" --next button
-  button_type: "stop" --middle button
-  button_type: "raise"
-  button_type: "lower"
-
-  action: press
-  action: release
-"""
 
 class PicoRemote(hass.Hass):
-
-  serials = {}
 
   def initialize(self):
     global start_press
@@ -29,12 +13,11 @@ class PicoRemote(hass.Hass):
     global previous_press
     start_press = time.time()
     stop_press = time.time()
-    PicoRemote.serials = self.args
-    self.listen_event(self.play_pause, "lutron_caseta_button_event")
+    self.remote_functions = self.args
+    self.listen_event(self.remote_callback, "lutron_caseta_button_event")
     self.log("initialization complete, lutron pico remotes.")
 
-  def play_pause(self, event, data, kwargs):
-    # self.log("button press triggered.")
+  def remote_callback(self, event, data, kwargs):
     global start_press
     global stop_press
     if data["action"] == "press":
@@ -42,31 +25,25 @@ class PicoRemote(hass.Hass):
     else:
       stop_press = time.time()
       duration = stop_press - start_press
+      default_entity = self.remote_functions[data["serial"]]
+      actions = dict((key,d[key]) for d in self.remote_functions["actions"] for key in d)
+      button_name = data['button_type']
+      action = actions[button_name]
       if duration > 0.4:
         self.log("long press detected")
-        shuffle = "select_source"
+        if type(action) == list:
+            action = action[1]
       else:
-        shuffle = "shuffle_set"
-      # self.log(delay)
-      button_name = data["button_type"]
-      default_player = PicoRemote.serials[data["serial"]]
-      actions = {
-          "on": "media_play_pause", 
-          "off": "media_next_track", 
-          "stop": shuffle, 
-          "raise": "volume_set",
-          "lower": "volume_set"
-        }
-      action = actions[button_name]
-      vol_change = 0.0
+        if type(action) == list:
+            action = action[0]
+      service_data={"entity_id": default_entity, "action": action}
       sensitivity = duration/7
       if button_name == "raise":
-        vol_change = sensitivity
+        sensitivity = sensitivity
       elif button_name == "lower":
-        vol_change = -1*sensitivity
-      self.call_service("speakers/control", data={"default": default_player, "action": action, "vol_change": vol_change})
+        sensitivity = -1*sensitivity
+      else:
+        sensitivity = 0.0
+      service_data[self.remote_functions["sensitivity"]] = sensitivity
+      self.call_service(self.remote_functions["service_call"], **service_data)
       
-
-
-
-
